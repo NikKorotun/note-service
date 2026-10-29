@@ -1,0 +1,341 @@
+openapi: 3.1.0
+info:
+  title: Notes API
+  version: 1.0.0
+  description: RESTful API сервиса заметок.
+
+servers:
+  - url: http://localhost/api/v1
+    description: Локальное окружение (docker)
+
+tags:
+  - name: Auth
+    description: Выпуск и пролонгация JWT-токена
+  - name: Notes
+    description: Работа с заметками
+
+security:
+  - bearerAuth: []
+
+paths:
+  /auth/token:
+    post:
+      tags: [Auth]
+      operationId: issueToken
+      summary: Выпуск токена
+      description: Выпускает новый JWT access-токен. Не требует авторизации и тела запроса.
+      security: []
+      responses:
+        '200':
+          description: Токен выпущен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      operationId: refreshToken
+      summary: Пролонгация токена
+      description: |
+        Выпускает новый токен в обмен на текущий, переданный в заголовке
+        `Authorization: Bearer <token>`. Старый токен становится недействительным.
+        Токен с истёкшим сроком действия можно обменять, пока не истёк
+        период обновления (refresh TTL).
+      responses:
+        '200':
+          description: Новый токен выпущен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Token'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /notes:
+    get:
+      tags: [Notes]
+      operationId: listNotes
+      summary: Список всех заметок
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Постраничный список заметок
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteCollection'
+        '400':
+          description: Некорректные параметры пагинации
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorBody'
+              example:
+                message: The per page field must not be greater than 100.
+                errors:
+                  per_page:
+                    - The per page field must not be greater than 100.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [Notes]
+      operationId: createNote
+      summary: Создание заметки
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteInput'
+      responses:
+        '201':
+          description: Заметка создана
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResource'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+
+  /notes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/NoteId'
+    get:
+      tags: [Notes]
+      operationId: getNote
+      summary: Просмотр заметки
+      responses:
+        '200':
+          description: Заметка
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResource'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Notes]
+      operationId: updateNote
+      summary: Редактирование заметки
+      description: |
+        Частичное обновление: изменяются только переданные поля, остальные остаются как есть.
+        Нужно передать хотя бы одно поле.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotePatch'
+      responses:
+        '200':
+          description: Заметка обновлена
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NoteResource'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+    delete:
+      tags: [Notes]
+      operationId: deleteNote
+      summary: Удаление заметки
+      responses:
+        '204':
+          description: Заметка удалена
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    NoteId:
+      name: id
+      in: path
+      required: true
+      description: Идентификатор заметки
+      schema:
+        type: integer
+        minimum: 1
+    Page:
+      name: page
+      in: query
+      required: false
+      description: Номер страницы
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PerPage:
+      name: per_page
+      in: query
+      required: false
+      description: Количество заметок на странице
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 15
+
+  schemas:
+    Token:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+          example: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature
+        token_type:
+          type: string
+          enum: [bearer]
+          example: bearer
+        expires_in:
+          type: integer
+          description: Время жизни токена в секундах
+          example: 3600
+
+    Note:
+      type: object
+      required: [id, title, content, created_at, updated_at]
+      properties:
+        id:
+          type: integer
+          example: 1
+        title:
+          type: string
+          example: Купить продукты
+        content:
+          type: [string, 'null']
+          example: Молоко, хлеб, сыр
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+
+    NoteInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: Купить продукты
+        content:
+          type: [string, 'null']
+          maxLength: 10000
+          example: Молоко, хлеб, сыр
+
+    NotePatch:
+      type: object
+      minProperties: 1
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+          example: Купить продукты
+        content:
+          type: [string, 'null']
+          maxLength: 10000
+          example: Молоко, хлеб, сыр
+
+    NoteResource:
+      type: object
+      required: [data]
+      properties:
+        data:
+          $ref: '#/components/schemas/Note'
+
+    NoteCollection:
+      type: object
+      required: [data, meta]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        meta:
+          type: object
+          required: [current_page, last_page, per_page, total]
+          properties:
+            current_page:
+              type: integer
+              example: 1
+            last_page:
+              type: integer
+              example: 3
+            per_page:
+              type: integer
+              example: 15
+            total:
+              type: integer
+              example: 42
+
+    Error:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+
+    ValidationErrorBody:
+      type: object
+      required: [message, errors]
+      properties:
+        message:
+          type: string
+          example: The title field is required.
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+          example:
+            title:
+              - The title field is required.
+
+  responses:
+    Unauthorized:
+      description: Токен отсутствует, недействителен или истёк
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Unauthenticated.
+    NotFound:
+      description: Заметка не найдена
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            message: Note not found.
+    ValidationError:
+      description: Ошибка валидации
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorBody'

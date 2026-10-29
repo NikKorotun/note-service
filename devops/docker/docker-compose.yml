@@ -1,0 +1,77 @@
+name: notes
+
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: notes-nginx
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    volumes:
+      - ../../backend:/data:ro
+      # Каталог, а не файл: при монтировании одного файла правки в редакторе не видны без перезапуска
+      - ./nginx:/etc/nginx/conf.d:ro
+    depends_on:
+      - php-fpm
+      - node
+    networks:
+      - notes
+
+  php-fpm:
+    build:
+      context: ./php-fpm
+      args:
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    container_name: notes-php-fpm
+    working_dir: /data
+    volumes:
+      - ../../backend:/data
+    environment:
+      DB_CONNECTION: pgsql
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_DATABASE: ${POSTGRES_DB:-notes}
+      DB_USERNAME: ${POSTGRES_USER:-notes}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - notes
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: notes-postgres
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-notes}
+      POSTGRES_USER: ${POSTGRES_USER:-notes}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secret}
+    volumes:
+      - ./_postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - notes
+
+  node:
+    build:
+      context: ./node
+    container_name: notes-node
+    working_dir: /app
+    volumes:
+      - ../../frontend:/app
+      - ./_node-modules:/app/node_modules
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      NGINX_PORT: ${NGINX_PORT:-80}
+    networks:
+      - notes
+
+networks:
+  notes:
+    driver: bridge

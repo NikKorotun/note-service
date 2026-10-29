@@ -1,0 +1,5 @@
+# Локальные настройки окружения (шаблон — devops/docker/.env.example)
+/devops/docker/.env
+
+.idea/
+.DS_Store

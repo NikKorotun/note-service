@@ -1,0 +1,17 @@
+import tailwindcss from '@tailwindcss/vite'
+import react from '@vitejs/plugin-react'
+import { defineConfig } from 'vite'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  server: {
+    host: '0.0.0.0',
+    port: 5173,
+    strictPort: true,
+    // Фронт открывается через nginx, поэтому HMR-клиент должен стучаться на его порт
+    hmr: {
+      clientPort: Number(process.env.NGINX_PORT ?? 80),
+    },
+  },
+})
